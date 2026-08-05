@@ -1,1 +1,0 @@
-alter table contents add fileFormat varchar(10);

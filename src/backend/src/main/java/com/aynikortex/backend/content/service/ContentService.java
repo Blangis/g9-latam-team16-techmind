@@ -1,12 +1,10 @@
 package com.aynikortex.backend.content.service;
 
-import com.aynikortex.backend.content.dto.ContentRequestDTO;
 import com.aynikortex.backend.content.dto.ContentResponseDTO;
 import com.aynikortex.backend.content.mapper.ContentMapper;
 import com.aynikortex.backend.content.repository.ContentRepository;
-import com.aynikortex.backend.entity.Contenido;
-import com.aynikortex.backend.entity.ContentType;
-import com.aynikortex.backend.integration.dto.response.Classification;
+import com.aynikortex.backend.content.entity.Content;
+import com.aynikortex.backend.content.enums.ContentType;
 import com.aynikortex.backend.integration.dto.response.ClassificationResponse;
 import com.aynikortex.backend.integration.service.DataScienceIntegrationService;
 import org.springframework.stereotype.Service;
@@ -47,9 +45,9 @@ public class ContentService {
             throw new IllegalArgumentException("Invalid content type");
         }
 
-        Contenido contenido = contentMapper.toEntity(requestDTO);
-        contenido.setCreatedAt(LocalDateTime.now());
-        Contenido savedContenido = contentRepository.save(contenido);
+        Content content = contentMapper.toEntity(requestDTO);
+        content.setCreatedAt(LocalDateTime.now());
+        Content savedContent = contentRepository.save(content);
 
         try {
             ClassificationResponse dsResponse;
@@ -58,13 +56,13 @@ public class ContentService {
                 Map<String, Object> textData = Map.of("text", requestDTO.textContent());
 
                 dsResponse = dataScienceService.classifyText(
-                        savedContenido.getId().toString(),
+                        savedContent.getId().toString(),
                         requestDTO.title(),
                         textData
                 );
             } else {
                 Map<String, Object> fileMetadata = Map.of(
-                        "id", savedContenido.getId().toString(),
+                        "id", savedContent.getId().toString(),
                         "title", requestDTO.title() != null ? requestDTO.title() : "Sin título"
                 );
 
@@ -78,25 +76,25 @@ public class ContentService {
                 var classification = dsResponse.classification();
 
                 if (classification != null) {
-                    savedContenido.setCategory(classification.category());
-                    savedContenido.setSubCategory(classification.subcategory());
+                    savedContent.setCategory(classification.category());
+                    savedContent.setSubCategory(classification.subcategory());
 
                     if (classification.confidence() != null) {
-                        savedContenido.setConfidence(classification.confidence().doubleValue());
+                        savedContent.setConfidence(classification.confidence().doubleValue());
                     }
                 }
 
-                savedContenido.setModelVersion(dsResponse.modelVersion());
-                savedContenido.setUpdatedAt(LocalDateTime.now());
+                savedContent.setModelVersion(dsResponse.modelVersion());
+                savedContent.setUpdatedAt(LocalDateTime.now());
 
-                savedContenido = contentRepository.save(savedContenido);
+                savedContent = contentRepository.save(savedContent);
             }
 
         } catch (Exception e) {
             throw new RuntimeException("Error al comunicarse con el servicio de Ciencia de Datos: " + e.getMessage(), e);
         }
 
-        return contentMapper.toResponseDTO(savedContenido);
+        return contentMapper.toResponseDTO(savedContent);
     }
 
     @Transactional(readOnly = true)
@@ -108,9 +106,9 @@ public class ContentService {
 
     @Transactional(readOnly = true)
     public ContentResponseDTO getContentById(UUID id) {
-        Contenido contenido = contentRepository.findById(id)
+        Content content = contentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Contenido no encontrado con ID: " + id));
-        return contentMapper.toResponseDTO(contenido);
+        return contentMapper.toResponseDTO(content);
     }
 
     @Transactional

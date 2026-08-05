@@ -1,4 +1,5 @@
-package com.aynikortex.backend.content.model;
+package com.aynikortex.backend.content.enums;
+
 
 public enum ContentType {
     TEXT,

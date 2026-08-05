@@ -1,6 +1,5 @@
 package com.aynikortex.backend.content.mapper;
 
-import com.aynikortex.backend.content.dto.KeywordDTO;
 import org.springframework.stereotype.Component;
 import java.util.List;
 

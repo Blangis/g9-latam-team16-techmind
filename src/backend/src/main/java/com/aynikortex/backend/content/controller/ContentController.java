@@ -1,6 +1,5 @@
 package com.aynikortex.backend.content.controller;
 
-import com.aynikortex.backend.content.dto.ContentRequestDTO;
 import com.aynikortex.backend.content.dto.ContentResponseDTO;
 import com.aynikortex.backend.content.service.ContentService;
 import jakarta.validation.Valid;
