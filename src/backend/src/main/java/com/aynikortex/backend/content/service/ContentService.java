@@ -1,146 +1,168 @@
 package com.aynikortex.backend.content.service;
 
-import com.aynikortex.backend.content.dto.ContentResponseDTO;
+import com.aynikortex.backend.content.dto.request.CreateFileContentRequest;
+import com.aynikortex.backend.content.dto.request.CreateTextContentRequest;
+import com.aynikortex.backend.content.dto.response.ContentResponseDTO;
+import com.aynikortex.backend.content.entity.Content;
+import com.aynikortex.backend.content.entity.Keyword;
+import com.aynikortex.backend.content.enums.FileFormat;
 import com.aynikortex.backend.content.mapper.ContentMapper;
 import com.aynikortex.backend.content.repository.ContentRepository;
-import com.aynikortex.backend.content.entity.Content;
-import com.aynikortex.backend.content.enums.ContentType;
+import com.aynikortex.backend.exception.ContentNotFoundException;
 import com.aynikortex.backend.integration.dto.response.ClassificationResponse;
 import com.aynikortex.backend.integration.service.DataScienceIntegrationService;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 @Service
 public class ContentService {
 
     private final ContentRepository contentRepository;
     private final ContentMapper contentMapper;
-    private final DataScienceIntegrationService dataScienceService;
+    private final FileStorageService fileStorageService;
+    private final DataScienceIntegrationService dataScienceIntegrationService;
 
-    public ContentService(ContentRepository contentRepository,
-                          ContentMapper contentMapper,
-                          DataScienceIntegrationService dataScienceService) {
+    public ContentService(
+            ContentRepository contentRepository,
+            ContentMapper contentMapper,
+            FileStorageService fileStorageService,
+            DataScienceIntegrationService dataScienceIntegrationService
+    ) {
         this.contentRepository = contentRepository;
         this.contentMapper = contentMapper;
-        this.dataScienceService = dataScienceService;
+        this.fileStorageService = fileStorageService;
+        this.dataScienceIntegrationService = dataScienceIntegrationService;
     }
 
-    @Transactional
-    public ContentResponseDTO createContent(ContentRequestDTO requestDTO) {
-        if (requestDTO.contentType() == ContentType.TEXT){
-            if (requestDTO.textContent() == null || requestDTO.textContent().trim().isEmpty()){
-                throw new IllegalArgumentException("Text content is required for TEXT type");
-            }
-        } else if (requestDTO.contentType() == ContentType.FILE) {
-            if (requestDTO.file() == null && (requestDTO.fileName() == null || requestDTO.filePath() == null)){
-                throw new IllegalArgumentException("File content is required for FILE type");
-            }
-        } else {
-            throw new IllegalArgumentException("Invalid content type");
-        }
+    public ContentResponseDTO createTextContent(
+            CreateTextContentRequest request
+    ) {
 
-        Content content = contentMapper.toEntity(requestDTO);
-        content.setCreatedAt(LocalDateTime.now());
-        Content savedContent = contentRepository.save(content);
+        // 1. Request → Entity
+        Content content = contentMapper.toEntity(request);
 
-        try {
-            ClassificationResponse dsResponse;
+        // 2. Primer guardado
+        content = contentRepository.save(content);
 
-            if (requestDTO.contentType() == ContentType.TEXT) {
-                Map<String, Object> textData = Map.of("text", requestDTO.textContent());
-
-                dsResponse = dataScienceService.classifyText(
-                        savedContent.getId().toString(),
-                        requestDTO.title(),
-                        textData
-                );
-            } else {
-                Map<String, Object> fileMetadata = Map.of(
-                        "id", savedContent.getId().toString(),
-                        "title", requestDTO.title() != null ? requestDTO.title() : "Sin título"
+        // 3. Solicitar clasificación a DS
+        ClassificationResponse response =
+                dataScienceIntegrationService.classifyText(
+                        content.getTitle(),
+                        content.getTextContent(),
+                        null
                 );
 
-                dsResponse = dataScienceService.classifyFile(
-                        requestDTO.file(),
-                        fileMetadata
-                );
-            }
+        // 4. Aplicar clasificación
+        applyClassification(content, response);
 
-            if (dsResponse != null && "SUCCESS".equalsIgnoreCase(dsResponse.status())) {
-                var classification = dsResponse.classification();
+        // 5. Segundo guardado
+        content = contentRepository.save(content);
 
-                if (classification != null) {
-                    savedContent.setCategory(classification.category());
-                    savedContent.setSubCategory(classification.subcategory());
-
-                    if (classification.confidence() != null) {
-                        savedContent.setConfidence(classification.confidence().doubleValue());
-                    }
-                }
-
-                savedContent.setModelVersion(dsResponse.modelVersion());
-                savedContent.setUpdatedAt(LocalDateTime.now());
-
-                savedContent = contentRepository.save(savedContent);
-            }
-
-        } catch (Exception e) {
-            throw new RuntimeException("Error al comunicarse con el servicio de Ciencia de Datos: " + e.getMessage(), e);
-        }
-
-        return contentMapper.toResponseDTO(savedContent);
-    }
-
-    @Transactional(readOnly = true)
-    public List<ContentResponseDTO> getAllContents() {
-        return contentRepository.findAll().stream()
-                .map(contentMapper::toResponseDTO)
-                .collect(Collectors.toList());
-    }
-
-    @Transactional(readOnly = true)
-    public ContentResponseDTO getContentById(UUID id) {
-        Content content = contentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Contenido no encontrado con ID: " + id));
+        // 6. Entity → Response DTO
         return contentMapper.toResponseDTO(content);
     }
 
-    @Transactional
-    public void deleteContent(UUID id) {
-        if (!contentRepository.existsById(id)) {
-            throw new RuntimeException("No se puede eliminar, contenido no encontrado con ID: " + id);
-        }
-        contentRepository.deleteById(id);
+    public ContentResponseDTO createFileContent(
+            CreateFileContentRequest request
+    ){
+
+        // 1. Determinar el formato del archivo
+        FileFormat fileFormat = FileFormat.fromFilename(
+                request.file().getOriginalFilename()
+        );
+
+        // 2. Guardar físicamente el archivo
+        String filePath = fileStorageService.save(request.file());
+
+
+        // 3. Request → Entity
+        Content content = contentMapper.toEntity(
+                request,
+                filePath,
+                fileFormat
+        );
+
+        // 4. Primer guardado
+        content = contentRepository.save(content);
+
+        // 5. Solicitar clasificación a Data Science
+        ClassificationResponse response =
+                dataScienceIntegrationService.classifyFile(
+                        request.file(),
+                        null
+                );
+
+        // 6. Aplicar clasificación
+        applyClassification(content, response);
+
+        // 7. Segundo guardado
+        content = contentRepository.save(content);
+
+        // 8. Entity → Response DTO
+        return contentMapper.toResponseDTO(content);
     }
 
-    @Transactional(readOnly = true)
-    public List<ContentResponseDTO> searchContentsByTitle(String title) {
-        return contentRepository.findByTitleContainingIgnoreCase(title).stream()
+    private void applyClassification(
+            Content content,
+            ClassificationResponse response
+    ) {
+        content.setCategory(response.classification().category());
+        content.setSubcategory(response.classification().subcategory());
+        content.setConfidence(response.classification().confidence());
+        content.setSummary(response.classification().summary());
+        content.setModelVersion(response.modelVersion());
+
+        content.setKeywords(
+                response.classification().keywords()
+                        .stream()
+                        .map(keyword -> new Keyword(
+                                keyword.term(),
+                                keyword.score()
+                        ))
+                        .toList()
+        );
+    }
+
+    public List<ContentResponseDTO> getAllContents() {
+
+        return contentRepository.findAll()
+                .stream()
                 .map(contentMapper::toResponseDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    @Transactional(readOnly = true)
-    public List<ContentResponseDTO> getContentsByCategoryOrSubcategory(String term) {
-        return contentRepository.findByCategoryContainingIgnoreCaseOrSubcategoryContainingIgnoreCase(term, term).stream()
+    public ContentResponseDTO getContentById(UUID id) {
+
+        Content content = contentRepository.findById(id)
+                .orElseThrow(() -> new ContentNotFoundException(id));
+
+        return contentMapper.toResponseDTO(content);
+    }
+
+    public List<ContentResponseDTO> searchContentsByTitle(String title){
+        return contentRepository
+                .findByTitleContainingIgnoreCase(title)
+                .stream()
                 .map(contentMapper::toResponseDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    @Transactional(readOnly = true)
+    public List<ContentResponseDTO> getContentsByCategoryOrSubcategory(String term){
+        return contentRepository.findByCategoryIgnoreCaseOrSubcategoryIgnoreCase(term, term)
+                .stream()
+                .map(contentMapper::toResponseDTO)
+                .toList();
+    }
+
     public List<ContentResponseDTO> searchContentsByKeyword(String keyword) {
-        String queryKeyword = keyword.toLowerCase();
-        return contentRepository.findAll().stream()
-                .filter(content -> content.getKeywords() != null &&
-                        content.getKeywords().stream()
-                                .anyMatch(k -> k.getWord() != null && k.getWord().toLowerCase().contains(queryKeyword)))
+
+        return contentRepository.findByKeyword(keyword)
+                .stream()
                 .map(contentMapper::toResponseDTO)
-                .collect(Collectors.toList());
+                .toList();
     }
+
+
 }

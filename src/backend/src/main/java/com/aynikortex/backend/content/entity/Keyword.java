@@ -5,6 +5,8 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Getter
 @Setter
 @NoArgsConstructor
@@ -13,6 +15,6 @@ public class Keyword {
 
     private String term;
 
-    private Double score;
+    private BigDecimal score;
 
 }
