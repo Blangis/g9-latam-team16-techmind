@@ -164,5 +164,16 @@ public class ContentService {
                 .toList();
     }
 
+    public void deleteContent(UUID id) {
+
+        Content content = contentRepository.findById(id)
+                .orElseThrow(() -> new ContentNotFoundException(id));
+
+        if (content.getFilePath() != null) {
+            fileStorageService.delete(content.getFilePath());
+        }
+
+        contentRepository.delete(content);
+    }
 
 }
