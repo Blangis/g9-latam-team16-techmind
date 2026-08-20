@@ -176,4 +176,4 @@ public class ContentService {
         contentRepository.delete(content);
     }
 
-}
+};
