@@ -1,1 +1,0 @@
-alter-table-contents-rename-column-description to resumen;
