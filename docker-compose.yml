@@ -1,0 +1,41 @@
+services:
+  # 1. Servicio de Base de Datos MySQL
+  aynikortex-db:
+    image: mysql:8.0
+    container_name: aynikortex_mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password
+      MYSQL_DATABASE: aynikortex_db
+      MYSQL_USER: ayni_user
+      MYSQL_PASSWORD: ayni_password
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
+
+  # 2. Servicio del Backend (Spring Boot)
+  backend-api:
+    build:
+      context: ./src/backend
+      dockerfile: Dockerfile
+    container_name: aynikortex_backend
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Conexión con Data Science en OCI
+      - DATASCIENCE_BASE_URL=http://40.233.31.115:8000
+
+      # Conexión con MySQL Docker
+      - DB_URL=jdbc:mysql://aynikortex-db:3306/aynikortex_db
+      - DB_USERNAME=ayni_user
+      - DB_PASSWORD=ayni_password
+
+    depends_on:
+      - aynikortex-db
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
