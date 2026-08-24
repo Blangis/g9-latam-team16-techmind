@@ -45,6 +45,12 @@ function ContentCard({ content, onDelete }) {
 
   // Descargar el CONTENIDO COMPLETO como .txt
   const downloadAsText = () => {
+    const keywords =
+      content.keywords
+        ?.map(
+          (keyword) => `${keyword.term} (${(keyword.score * 100).toFixed(0)}%)`,
+        )
+        .join(", ") ?? "";
     const fileContent = `
 TÍTULO: ${content.title}
 
@@ -53,7 +59,7 @@ SUBCATEGORÍA: ${content.subcategory}
 TIPO: ${content.contentType}
 CONFIANZA DE IA: ${confidencePercentage.toFixed(0)}%
 
-KEYWORDS: ${content.keywords?.join(", ") ?? ""}
+KEYWORDS: ${keywords}
 
 ---
 
@@ -312,7 +318,7 @@ Fecha: ${new Date().toLocaleString("es-ES")}
                   {content.keywords?.map((keyword, index) => (
                     <Chip
                       key={index}
-                      label={keyword}
+                      label={keyword.term}
                       size="small"
                       variant="outlined"
                       sx={{ fontSize: "0.7rem" }}
